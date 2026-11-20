@@ -47,6 +47,27 @@ Artifacts are placed in `zig-out/bin/`:
 ./zig-out/bin/alexandrite bench
 ```
 
+### 0.2.0 Commands
+
+```bash
+# Every non-overlapping match, as JSON
+./zig-out/bin/alexandrite find --all --json 'a[0-9]+' 'xa12 a7 b'
+
+# Case-insensitive, bounded repetition
+./zig-out/bin/alexandrite match -i 'get|post{1,2}' 'POSTT'
+
+# Graphviz export of the minimized DFA
+./zig-out/bin/alexandrite dump --dot '(ab|cd)*e' > dfa.dot
+
+# Language equivalence with a shortest counterexample on mismatch
+./zig-out/bin/alexandrite equiv '(a|b)*' '(a*b*)*'
+
+# Tokenize a source buffer with the built-in maximal-munch lexer
+./zig-out/bin/alexandrite lex --json 'let x = 42;'
+```
+
+Supported syntax: literals, `.`, `[...]` and `[^...]` classes with escapes, `|`, `( )` groups, `*`, `+`, `?`, `{m}`, `{m,}`, `{m,n}`, `^`, `$`, and the inline flags `(?i)` (case-insensitive) and `(?s)` (dot matches newline). Patterns that exceed the state or nesting limits fail with a `CompileError` that carries the byte offset.
+
 ### Zig Library Integration
 
 ```zig

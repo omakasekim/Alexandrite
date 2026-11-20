@@ -45,6 +45,15 @@ pub fn scanAuditLog(line: []const u8) bool {
 - 공급망 및 메모리 안전성을 보장하기 위해 `repo_guard.py` 검증을 완벽하게 통과했습니다.
 - 유계 실행(bounded execution) 보장: 구조적으로 파국적 백트래킹이 원천 불가능합니다.
 
+## 0.2.0 변경 사항
+
+- 그룹, 중첩 선택, 범위 반복자 `{m,n}`, 부정 문자 클래스, `^`/`$` 앵커, 인라인 플래그 `(?i)`, `(?s)` 지원
+- Hopcroft 최소화와 알파벳 동치 클래스 압축
+- 두 정규식의 언어 동치 판정과 최단 반례 문자열 출력 (`alexandrite equiv`)
+- 컴파일 타임 최장 일치 렉서(`CompiledLexer`), 위치가 포함된 `CompileError` 진단
+- CLI: `find --all`, `dump --dot|--json`, `equiv`, `lex`, `bench` (모두 `--json` 지원)
+- WASM: 기존 0.1.0 내보내기를 유지하면서 플래그 컴파일, 다중 매치, 언어 공집합/유한성 판정 추가
+
 ## 라이선스
 
 MIT License. Copyright (c) 2026 Jeong Hoon Kim.
