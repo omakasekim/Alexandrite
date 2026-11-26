@@ -6,6 +6,7 @@ pub const wasm = @import("wasm.zig");
 
 const Dfa = dfa.Dfa;
 const CompileOptions = compiler.CompileOptions;
+const VERSION = "0.3.0";
 
 pub fn main(init: std.process.Init) !void {
     var stdout_buf: [8192]u8 = undefined;
@@ -29,6 +30,10 @@ pub fn main(init: std.process.Init) !void {
         try printUsage(stdout);
         try stdout.flush();
         return;
+    } else if (std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-V") or std.mem.eql(u8, cmd, "version")) {
+        try stdout.print("alexandrite {s}\n", .{VERSION});
+        try stdout.flush();
+        return;
     } else if (std.mem.eql(u8, cmd, "match")) {
         const ok = try cmdMatch(&args, stdout, stderr);
         try stdout.flush();
@@ -46,6 +51,16 @@ pub fn main(init: std.process.Init) !void {
         if (!ok) std.process.exit(1);
     } else if (std.mem.eql(u8, cmd, "equiv")) {
         const ok = try cmdEquiv(&args, stdout, stderr);
+        try stdout.flush();
+        try stderr.flush();
+        if (!ok) std.process.exit(1);
+    } else if (std.mem.eql(u8, cmd, "subset")) {
+        const ok = try cmdSubset(&args, stdout, stderr);
+        try stdout.flush();
+        try stderr.flush();
+        if (!ok) std.process.exit(1);
+    } else if (std.mem.eql(u8, cmd, "disjoint")) {
+        const ok = try cmdDisjoint(&args, stdout, stderr);
         try stdout.flush();
         try stderr.flush();
         if (!ok) std.process.exit(1);
@@ -359,6 +374,128 @@ fn cmdEquiv(args: anytype, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !bool
     return true;
 }
 
+fn cmdSubset(args: anytype, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !bool {
+    var json_mode = false;
+    var opts = CompileOptions{};
+    var pos_args: [2][]const u8 = undefined;
+    var pos_count: usize = 0;
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--json")) {
+            json_mode = true;
+        } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--ignore-case")) {
+            opts.case_insensitive = true;
+        } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--dotall")) {
+            opts.dot_matches_newline = true;
+        } else if (pos_count < 2) {
+            pos_args[pos_count] = arg;
+            pos_count += 1;
+        }
+    }
+
+    if (pos_count < 2) {
+        try stderr.writeAll("Error: usage: alexandrite subset [--json] [-i] [-s] <pattern1> <pattern2>\n");
+        return false;
+    }
+
+    const p1 = pos_args[0];
+    const p2 = pos_args[1];
+    const d1 = Dfa.compileWithOptions(p1, opts) catch |err| {
+        try stderr.print("Compile error for pattern 1 '{s}': {s}\n", .{ p1, @errorName(err) });
+        return false;
+    };
+    const d2 = Dfa.compileWithOptions(p2, opts) catch |err| {
+        try stderr.print("Compile error for pattern 2 '{s}': {s}\n", .{ p2, @errorName(err) });
+        return false;
+    };
+
+    var witness_buf: [512]u8 = undefined;
+    const witness_opt = d1.findSubsetCounterexample(&d2, &witness_buf) catch null;
+    const subset = d1.isSubsetOf(&d2);
+
+    if (json_mode) {
+        try stdout.print("{{\"subset\":{},\"states_a\":{d},\"states_b\":{d}", .{ subset, d1.num_states, d2.num_states });
+        if (!subset) {
+            if (witness_opt) |w| {
+                try stdout.writeAll(",\"counterexample\":");
+                try writeJsonString(stdout, w);
+            }
+        }
+        try stdout.writeAll("}\n");
+    } else if (subset) {
+        try stdout.print("SUBSET: L('{s}') <= L('{s}')\n", .{ p1, p2 });
+    } else {
+        try stdout.print("NOT SUBSET: L('{s}') is not contained in L('{s}')\n", .{ p1, p2 });
+        if (witness_opt) |w| {
+            try stdout.writeAll("Shortest counterexample: \"");
+            for (w) |b| try writeDisplayByte(stdout, b);
+            try stdout.print("\" (len={d})\n", .{w.len});
+        }
+    }
+    return true;
+}
+
+fn cmdDisjoint(args: anytype, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !bool {
+    var json_mode = false;
+    var opts = CompileOptions{};
+    var pos_args: [2][]const u8 = undefined;
+    var pos_count: usize = 0;
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--json")) {
+            json_mode = true;
+        } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--ignore-case")) {
+            opts.case_insensitive = true;
+        } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--dotall")) {
+            opts.dot_matches_newline = true;
+        } else if (pos_count < 2) {
+            pos_args[pos_count] = arg;
+            pos_count += 1;
+        }
+    }
+
+    if (pos_count < 2) {
+        try stderr.writeAll("Error: usage: alexandrite disjoint [--json] [-i] [-s] <pattern1> <pattern2>\n");
+        return false;
+    }
+
+    const p1 = pos_args[0];
+    const p2 = pos_args[1];
+    const d1 = Dfa.compileWithOptions(p1, opts) catch |err| {
+        try stderr.print("Compile error for pattern 1 '{s}': {s}\n", .{ p1, @errorName(err) });
+        return false;
+    };
+    const d2 = Dfa.compileWithOptions(p2, opts) catch |err| {
+        try stderr.print("Compile error for pattern 2 '{s}': {s}\n", .{ p2, @errorName(err) });
+        return false;
+    };
+
+    var witness_buf: [512]u8 = undefined;
+    const witness_opt = d1.findCommonWitness(&d2, &witness_buf) catch null;
+    const disjoint = d1.isDisjointFrom(&d2);
+
+    if (json_mode) {
+        try stdout.print("{{\"disjoint\":{},\"states_a\":{d},\"states_b\":{d}", .{ disjoint, d1.num_states, d2.num_states });
+        if (!disjoint) {
+            if (witness_opt) |w| {
+                try stdout.writeAll(",\"witness\":");
+                try writeJsonString(stdout, w);
+            }
+        }
+        try stdout.writeAll("}\n");
+    } else if (disjoint) {
+        try stdout.print("DISJOINT: L('{s}') & L('{s}') == empty\n", .{ p1, p2 });
+    } else {
+        try stdout.print("OVERLAPPING: L('{s}') & L('{s}') != empty\n", .{ p1, p2 });
+        if (witness_opt) |w| {
+            try stdout.writeAll("Shortest shared string: \"");
+            for (w) |b| try writeDisplayByte(stdout, b);
+            try stdout.print("\" (len={d})\n", .{w.len});
+        }
+    }
+    return true;
+}
+
 fn cmdLex(args: anytype, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !bool {
     var json_mode = false;
     var input_opt: ?[]const u8 = null;
@@ -573,8 +710,11 @@ fn printUsage(writer: *std.Io.Writer) !void {
         \\  alexandrite find [--all] [--json] [-i] [-s] <pattern> <text>
         \\  alexandrite dump [--dot|--json] [--no-minimize] [-i] [-s] <pattern>
         \\  alexandrite equiv [--json] [-i] [-s] <pattern1> <pattern2>
+        \\  alexandrite subset [--json] [-i] [-s] <pattern1> <pattern2>
+        \\  alexandrite disjoint [--json] [-i] [-s] <pattern1> <pattern2>
         \\  alexandrite lex [--json] <source>
         \\  alexandrite bench [--json]
+        \\  alexandrite --version
         \\  alexandrite --help
         \\
     );
@@ -585,4 +725,27 @@ test {
     _ = @import("dfa.zig");
     _ = @import("lexer.zig");
     _ = @import("wasm.zig");
+}
+
+test "v0.3.0 language inclusion, disjointness, and shortest witness" {
+    const digits = try Dfa.compileWithOptions("[0-9]+", .{});
+    const alnum = try Dfa.compileWithOptions("[a-z0-9]+", .{});
+    const letters = try Dfa.compileWithOptions("[a-z]+", .{});
+    const ab_plus = try Dfa.compileWithOptions("a+b+", .{});
+
+    try std.testing.expect(digits.isSubsetOf(&alnum));
+    try std.testing.expect(!alnum.isSubsetOf(&digits));
+
+    var buf: [64]u8 = undefined;
+    const sub_w = (try alnum.findSubsetCounterexample(&digits, &buf)).?;
+    try std.testing.expect(alnum.matches(sub_w));
+    try std.testing.expect(!digits.matches(sub_w));
+
+    try std.testing.expect(digits.isDisjointFrom(&letters));
+    try std.testing.expect(!alnum.isDisjointFrom(&letters));
+    const common = (try alnum.findCommonWitness(&letters, &buf)).?;
+    try std.testing.expect(alnum.matches(common) and letters.matches(common));
+
+    const shortest = (try ab_plus.shortestAccepted(&buf)).?;
+    try std.testing.expectEqualStrings("ab", shortest);
 }

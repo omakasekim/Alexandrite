@@ -445,13 +445,23 @@ pub const Dfa = struct {
         return x;
     }
 
-    /// Finds a shortest string accepted by exactly one of `self` and `other`,
-    /// preferring printable ASCII witnesses among equal-length counterexamples.
-    /// Returns `null` if and only if L(self) == L(other).
-    pub fn findCounterexample(self: *const Dfa, other: *const Dfa, out_buf: []u8) error{BufferTooSmall}!?[]const u8 {
-        if (self.isEquivalentTo(other)) return null;
+    const ProductMode = enum { symmetric_diff, difference, intersection };
 
-        if (self.accepting[START_STATE] != other.accepting[START_STATE]) {
+    fn productMatches(self: *const Dfa, other: *const Dfa, u: u16, v: u16, mode: ProductMode) bool {
+        return switch (mode) {
+            .symmetric_diff => self.accepting[u] != other.accepting[v],
+            .difference => self.accepting[u] and !other.accepting[v],
+            .intersection => self.accepting[u] and other.accepting[v],
+        };
+    }
+
+    fn findProductWitness(
+        self: *const Dfa,
+        other: *const Dfa,
+        mode: ProductMode,
+        out_buf: []u8,
+    ) error{BufferTooSmall}!?[]const u8 {
+        if (self.productMatches(other, START_STATE, START_STATE, mode)) {
             return out_buf[0..0];
         }
 
@@ -488,7 +498,7 @@ pub const Dfa = struct {
                 parent_id[nxt] = cur;
                 via_byte[nxt] = b;
 
-                if (self.accepting[next_u] != other.accepting[next_v]) {
+                if (self.productMatches(other, next_u, next_v, mode)) {
                     found_id = nxt;
                     break;
                 }
@@ -519,6 +529,43 @@ pub const Dfa = struct {
             walk = parent_id[walk];
         }
         return out_buf[0..len];
+    }
+
+    /// Finds a shortest string accepted by exactly one of `self` and `other`,
+    /// preferring printable ASCII witnesses among equal-length counterexamples.
+    /// Returns `null` if and only if L(self) == L(other).
+    pub fn findCounterexample(self: *const Dfa, other: *const Dfa, out_buf: []u8) error{BufferTooSmall}!?[]const u8 {
+        if (self.isEquivalentTo(other)) return null;
+        return self.findProductWitness(other, .symmetric_diff, out_buf);
+    }
+
+    /// Finds a shortest witness in L(self) \ L(other), preferring printable ASCII.
+    /// Returns `null` if and only if L(self) ⊆ L(other).
+    pub fn findSubsetCounterexample(self: *const Dfa, other: *const Dfa, out_buf: []u8) error{BufferTooSmall}!?[]const u8 {
+        return self.findProductWitness(other, .difference, out_buf);
+    }
+
+    /// Decides exact regular-language inclusion L(self) ⊆ L(other) with zero heap allocation.
+    pub fn isSubsetOf(self: *const Dfa, other: *const Dfa) bool {
+        var scratch: [MAX_STATES * MAX_STATES]u8 = undefined;
+        return (self.findProductWitness(other, .difference, &scratch) catch return false) == null;
+    }
+
+    /// Finds a shortest witness in L(self) ∩ L(other), preferring printable ASCII.
+    /// Returns `null` if and only if L(self) ∩ L(other) = ∅.
+    pub fn findCommonWitness(self: *const Dfa, other: *const Dfa, out_buf: []u8) error{BufferTooSmall}!?[]const u8 {
+        return self.findProductWitness(other, .intersection, out_buf);
+    }
+
+    /// Decides exact regular-language disjointness L(self) ∩ L(other) = ∅ with zero heap allocation.
+    pub fn isDisjointFrom(self: *const Dfa, other: *const Dfa) bool {
+        var scratch: [MAX_STATES * MAX_STATES]u8 = undefined;
+        return (self.findProductWitness(other, .intersection, &scratch) catch return false) == null;
+    }
+
+    /// Finds a shortest string accepted by `self`, preferring printable ASCII, or `null` if empty.
+    pub fn shortestAccepted(self: *const Dfa, out_buf: []u8) error{BufferTooSmall}!?[]const u8 {
+        return self.findProductWitness(self, .intersection, out_buf);
     }
 
     /// Exports the DFA graph in Graphviz DOT format with merged byte-range edge labels.

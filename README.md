@@ -59,8 +59,10 @@ Artifacts are placed in `zig-out/bin/`:
 # Graphviz export of the minimized DFA
 ./zig-out/bin/alexandrite dump --dot '(ab|cd)*e' > dfa.dot
 
-# Language equivalence with a shortest counterexample on mismatch
+# Language equivalence, inclusion, and disjointness with shortest witnesses
 ./zig-out/bin/alexandrite equiv '(a|b)*' '(a*b*)*'
+./zig-out/bin/alexandrite subset --json '[0-9]+' '[a-z0-9]+'
+./zig-out/bin/alexandrite disjoint --json '[0-9]+' '[a-z]+'
 
 # Tokenize a source buffer with the built-in maximal-munch lexer
 ./zig-out/bin/alexandrite lex --json 'let x = 42;'
